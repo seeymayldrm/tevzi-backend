@@ -1,7 +1,6 @@
-// backend/src/server.js
-const { PORT } = require("./config/env");
 const app = require("./app");
+const { PORT } = require("./config/env");
 
-app.listen(PORT, () => {
-    console.log(`Tevzi API listening on port ${PORT}`);
+app.listen(PORT, "0.0.0.0", () => {
+    console.log(`🚀 Tevzi API running on port ${PORT}`);
 });

@@ -1,0 +1,12 @@
+[build]
+builder = "NIXPACKS"
+buildCommand = "npm install"
+
+[deploy]
+startCommand = "npm start"
+
+[[deploy.hooks]]
+command = "npx prisma generate"
+
+[[deploy.hooks]]
+command = "npx prisma migrate deploy"
