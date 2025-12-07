@@ -10,32 +10,39 @@ const { notFound, errorHandler } = require("./middleware/errorHandler");
 const app = express();
 
 // ---- CORS FIX ----
-app.use(
-    cors({
-        origin: CORS_ORIGIN === "*" ? "*" : CORS_ORIGIN,
-        methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
-        allowedHeaders: ["Content-Type", "Authorization"],
-        credentials: false,
-        optionsSuccessStatus: 200,
-    })
-);
+const corsOptions = {
+    origin: CORS_ORIGIN === "*" ? "*" : CORS_ORIGIN,
+    methods: "GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS",
+    allowedHeaders: ["Content-Type", "Authorization"],
+    credentials: false,
+    optionsSuccessStatus: 200,
+};
 
-// Preflight OPTIONS
-app.options("*", cors());
+// Sadece **bir kere** cors() çağırıyoruz:
+app.use(cors(corsOptions));
 
-// Security
+// Preflight manuel handle
+app.use((req, res, next) => {
+    if (req.method === "OPTIONS") {
+        res.sendStatus(200);
+        return;
+    }
+    next();
+});
+
+// Security middleware
 app.use(helmet());
 
-// JSON parsing
+// JSON body parser
 app.use(express.json());
 
-// Request logs
+// Logging
 app.use(morgan("dev"));
 
-// API routes
+// Routes
 app.use("/api", routes);
 
-// 404 and error handlers
+// Errors
 app.use(notFound);
 app.use(errorHandler);
 
