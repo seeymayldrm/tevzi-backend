@@ -1,4 +1,3 @@
-// backend/src/app.js
 const express = require("express");
 const cors = require("cors");
 const morgan = require("morgan");
@@ -9,31 +8,27 @@ const { notFound, errorHandler } = require("./middleware/errorHandler");
 
 const app = express();
 
-// ---- CORS FIX ----
-const corsOptions = {
-    origin: CORS_ORIGIN === "*" ? "*" : CORS_ORIGIN,
-    methods: "GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS",
-    allowedHeaders: ["Content-Type", "Authorization"],
-    credentials: false,
-    optionsSuccessStatus: 200,
-};
+// ---- CORS (KESİN ÇÖZÜM) ----
+app.use(
+    cors({
+        origin: CORS_ORIGIN,
+        methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+        allowedHeaders: ["Content-Type", "Authorization"],
+        credentials: true,
+    })
+);
 
-// Sadece **bir kere** cors() çağırıyoruz:
-app.use(cors(corsOptions));
+app.options("*", cors());
 
-// Preflight manuel handle
-app.use((req, res, next) => {
-    if (req.method === "OPTIONS") {
-        res.sendStatus(200);
-        return;
-    }
-    next();
-});
+// ---- HELMET (CORS İLE ÇAKIŞMASIN) ----
+app.use(
+    helmet({
+        crossOriginEmbedderPolicy: false,
+        crossOriginResourcePolicy: { policy: "cross-origin" },
+    })
+);
 
-// Security middleware
-app.use(helmet());
-
-// JSON body parser
+// Body parser
 app.use(express.json());
 
 // Logging
@@ -42,7 +37,7 @@ app.use(morgan("dev"));
 // Routes
 app.use("/api", routes);
 
-// Errors
+// Error handlers
 app.use(notFound);
 app.use(errorHandler);
 
