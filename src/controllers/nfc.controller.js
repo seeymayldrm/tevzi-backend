@@ -32,28 +32,50 @@ async function assignCard(req, res, next) {
     }
 }
 
+
 // IN/OUT log
 async function scanCard(req, res, next) {
     try {
         const { uid, type, source } = req.body;
 
         if (!uid || !type) {
-            return res
-                .status(400)
-                .json({ error: "uid and type required" });
+            return res.status(400).json({ error: "uid and type required" });
         }
 
         if (!["IN", "OUT"].includes(type)) {
-            return res
-                .status(400)
-                .json({ error: "type must be IN or OUT" });
+            return res.status(400).json({ error: "type must be IN or OUT" });
         }
 
+        // Kartı bul
         const card = await prisma.nFCCard.findFirst({
             where: { uid, isActive: true },
             include: { personnel: true },
         });
 
+        // BUGÜNÜN BAŞI
+        const startOfDay = new Date();
+        startOfDay.setHours(0, 0, 0, 0);
+
+        // ❗ 1) Bu kart bugün aynı type (IN veya OUT) yaptı mı?
+        const existing = await prisma.attendanceLog.findFirst({
+            where: {
+                uid,
+                type: type === "IN" ? AttendanceType.IN : AttendanceType.OUT,
+                scannedAt: {
+                    gte: startOfDay
+                }
+            }
+        });
+
+        if (existing) {
+            return res.status(409).json({
+                error: "ALREADY_SCANNED",
+                message: `This card already did ${type} today.`,
+                type
+            });
+        }
+
+        // ❗ HENÜZ YAPMAMIŞ → Log yarat
         const log = await prisma.attendanceLog.create({
             data: {
                 uid,
@@ -75,10 +97,12 @@ async function scanCard(req, res, next) {
                 : null,
             log,
         });
+
     } catch (err) {
         next(err);
     }
 }
+
 
 // YENİ → Bugünün logları
 async function todayLogs(req, res, next) {

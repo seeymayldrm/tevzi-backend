@@ -36,7 +36,7 @@ async function main() {
         create: {
             name: "Gündüz Vardiyası",
             code: "DAY",
-            startTime: "08:00",
+            startTime: "07:00",
             endTime: "16:00",
         },
     });
