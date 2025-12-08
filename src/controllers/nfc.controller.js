@@ -2,7 +2,21 @@ const { PrismaClient, AttendanceType } = require("@prisma/client");
 
 const prisma = new PrismaClient();
 
-// NFC kart personele bağlama
+/* ---------------------------------------------------
+   TÜRKİYE SAATİ İLE GÜN BAŞLANGICI FONKSİYONU
+--------------------------------------------------- */
+function getTurkeyStartOfDay() {
+    const trNow = new Date(
+        new Date().toLocaleString("en-US", { timeZone: "Europe/Istanbul" })
+    );
+
+    trNow.setHours(0, 0, 0, 0);
+    return trNow;
+}
+
+/* ---------------------------------------------------
+   1) NFC KART PERSONELE BAĞLAMA
+--------------------------------------------------- */
 async function assignCard(req, res, next) {
     try {
         const { personnelId, uid } = req.body;
@@ -32,8 +46,9 @@ async function assignCard(req, res, next) {
     }
 }
 
-
-// IN/OUT log
+/* ---------------------------------------------------
+   2) NFC IN / OUT OKUTMA
+--------------------------------------------------- */
 async function scanCard(req, res, next) {
     try {
         const { uid, type, source } = req.body;
@@ -46,28 +61,21 @@ async function scanCard(req, res, next) {
             return res.status(400).json({ error: "type must be IN or OUT" });
         }
 
-        // Kartı bul
+        // Aktif kartı bul
         const card = await prisma.nFCCard.findFirst({
             where: { uid, isActive: true },
             include: { personnel: true },
         });
 
-        // BUGÜNÜN BAŞI (UTC)
-        const now = new Date();
-        const startOfDay = new Date(Date.UTC(
-            now.getUTCFullYear(),
-            now.getUTCMonth(),
-            now.getUTCDate()
-        ));
+        // Türkiye'ye göre bugünün başlangıcı
+        const startOfDay = getTurkeyStartOfDay();
 
-        // ❗ BUGÜN BU TYPE'LA LOG VAR MI (ENUM DEĞİL STRING EŞLEŞME)
+        // BUGÜN AYNI TIP'I OKUTMUŞ MU?
         const existing = await prisma.attendanceLog.findFirst({
             where: {
                 uid,
-                type: type, // ENUM değil, string karşılaştırıyoruz
-                scannedAt: {
-                    gte: startOfDay
-                }
+                type: type === "IN" ? AttendanceType.IN : AttendanceType.OUT,
+                scannedAt: { gte: startOfDay }
             }
         });
 
@@ -79,12 +87,12 @@ async function scanCard(req, res, next) {
             });
         }
 
-        // ❗ HENÜZ YOKSA LOG EKLE
+        // Log oluştur
         const log = await prisma.attendanceLog.create({
             data: {
                 uid,
-                type,        // ENUM'a Prisma kendisi çevirir
-                source,
+                type: type === "IN" ? AttendanceType.IN : AttendanceType.OUT,
+                source: source || null,
                 cardId: card?.id ?? null,
                 personnelId: card?.personnelId ?? null,
             },
@@ -107,16 +115,15 @@ async function scanCard(req, res, next) {
     }
 }
 
-
-
-// YENİ → Bugünün logları
+/* ---------------------------------------------------
+   3) BUGÜNÜN LOG'LARI (SADECE TR’YE GÖRE BUGÜN)
+--------------------------------------------------- */
 async function todayLogs(req, res, next) {
     try {
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
+        const trStart = getTurkeyStartOfDay();
 
         const logs = await prisma.attendanceLog.findMany({
-            where: { scannedAt: { gte: today } },
+            where: { scannedAt: { gte: trStart } },
             include: { personnel: true },
             orderBy: { scannedAt: "desc" }
         });
@@ -127,7 +134,10 @@ async function todayLogs(req, res, next) {
     }
 }
 
-// YENİ → Belirli günün tüm logları
+/* ---------------------------------------------------
+   4) BELİRLİ GÜN LOG'LARI
+   (CSV vs. için buraya dokunmuyoruz → eski loglar duruyor)
+--------------------------------------------------- */
 async function listLogs(req, res, next) {
     try {
         const { date } = req.query;
@@ -136,7 +146,12 @@ async function listLogs(req, res, next) {
             return res.status(400).json({ error: "date (YYYY-MM-DD) required" });
         }
 
-        const d = new Date(date);
+        // Girilen tarihin TR'ye göre başlangıcı
+        const d = new Date(
+            new Date(date + "T00:00:00").toLocaleString("en-US", {
+                timeZone: "Europe/Istanbul",
+            })
+        );
         d.setHours(0, 0, 0, 0);
 
         const nextDay = new Date(d);
