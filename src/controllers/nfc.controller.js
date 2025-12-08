@@ -52,15 +52,19 @@ async function scanCard(req, res, next) {
             include: { personnel: true },
         });
 
-        // BUGÜNÜN BAŞI
-        const startOfDay = new Date();
-        startOfDay.setHours(0, 0, 0, 0);
+        // BUGÜNÜN BAŞI (UTC)
+        const now = new Date();
+        const startOfDay = new Date(Date.UTC(
+            now.getUTCFullYear(),
+            now.getUTCMonth(),
+            now.getUTCDate()
+        ));
 
-        // ❗ 1) Bu kart bugün aynı type (IN veya OUT) yaptı mı?
+        // ❗ BUGÜN BU TYPE'LA LOG VAR MI (ENUM DEĞİL STRING EŞLEŞME)
         const existing = await prisma.attendanceLog.findFirst({
             where: {
                 uid,
-                type: type === "IN" ? AttendanceType.IN : AttendanceType.OUT,
+                type: type, // ENUM değil, string karşılaştırıyoruz
                 scannedAt: {
                     gte: startOfDay
                 }
@@ -75,12 +79,12 @@ async function scanCard(req, res, next) {
             });
         }
 
-        // ❗ HENÜZ YAPMAMIŞ → Log yarat
+        // ❗ HENÜZ YOKSA LOG EKLE
         const log = await prisma.attendanceLog.create({
             data: {
                 uid,
-                type: type === "IN" ? AttendanceType.IN : AttendanceType.OUT,
-                source: source || null,
+                type,        // ENUM'a Prisma kendisi çevirir
+                source,
                 cardId: card?.id ?? null,
                 personnelId: card?.personnelId ?? null,
             },
@@ -102,6 +106,7 @@ async function scanCard(req, res, next) {
         next(err);
     }
 }
+
 
 
 // YENİ → Bugünün logları
