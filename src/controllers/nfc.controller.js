@@ -3,15 +3,23 @@ const { PrismaClient, AttendanceType } = require("@prisma/client");
 const prisma = new PrismaClient();
 
 /* ---------------------------------------------------
-   TÜRKİYE SAATİ İLE GÜN BAŞLANGICI FONKSİYONU
+   TÜRKİYE SAATİNE ÇEVİR
+--------------------------------------------------- */
+function getTurkeyDate() {
+    return new Date(
+        new Date().toLocaleString("en-US", {
+            timeZone: "Europe/Istanbul",
+        })
+    );
+}
+
+/* ---------------------------------------------------
+   TÜRKİYE SAATİ İLE GÜN BAŞLANGICI
 --------------------------------------------------- */
 function getTurkeyStartOfDay() {
-    const trNow = new Date(
-        new Date().toLocaleString("en-US", { timeZone: "Europe/Istanbul" })
-    );
-
-    trNow.setHours(0, 0, 0, 0);
-    return trNow;
+    const d = getTurkeyDate();
+    d.setHours(0, 0, 0, 0);
+    return d;
 }
 
 /* ---------------------------------------------------
@@ -22,9 +30,7 @@ async function assignCard(req, res, next) {
         const { personnelId, uid } = req.body;
 
         if (!personnelId || !uid) {
-            return res
-                .status(400)
-                .json({ error: "personnelId and uid required" });
+            return res.status(400).json({ error: "personnelId and uid required" });
         }
 
         await prisma.nFCCard.updateMany({
@@ -61,21 +67,21 @@ async function scanCard(req, res, next) {
             return res.status(400).json({ error: "type must be IN or OUT" });
         }
 
-        // Aktif kartı bul
+        // Aktif kart
         const card = await prisma.nFCCard.findFirst({
             where: { uid, isActive: true },
             include: { personnel: true },
         });
 
-        // Türkiye'ye göre bugünün başlangıcı
-        const startOfDay = getTurkeyStartOfDay();
+        // TR : Bugünün başlangıcı
+        const trStart = getTurkeyStartOfDay();
 
-        // BUGÜN AYNI TIP'I OKUTMUŞ MU?
+        // bugün aynı tip okutmuş mu?
         const existing = await prisma.attendanceLog.findFirst({
             where: {
                 uid,
                 type: type === "IN" ? AttendanceType.IN : AttendanceType.OUT,
-                scannedAt: { gte: startOfDay }
+                scannedAt: { gte: trStart }
             }
         });
 
@@ -83,16 +89,19 @@ async function scanCard(req, res, next) {
             return res.status(409).json({
                 error: "ALREADY_SCANNED",
                 message: `This card already did ${type} today.`,
-                type
+                type,
             });
         }
 
-        // Log oluştur
+        // ŞİMDİ: TR saatine göre log kaydet
+        const trNow = getTurkeyDate();
+
         const log = await prisma.attendanceLog.create({
             data: {
                 uid,
                 type: type === "IN" ? AttendanceType.IN : AttendanceType.OUT,
                 source: source || null,
+                scannedAt: trNow,       // ✔ DOĞRU TARİH
                 cardId: card?.id ?? null,
                 personnelId: card?.personnelId ?? null,
             },
@@ -116,7 +125,7 @@ async function scanCard(req, res, next) {
 }
 
 /* ---------------------------------------------------
-   3) BUGÜNÜN LOG'LARI (SADECE TR’YE GÖRE BUGÜN)
+   3) BUGÜNÜN LOG'LARI (TR’YE GÖRE)
 --------------------------------------------------- */
 async function todayLogs(req, res, next) {
     try {
@@ -125,7 +134,7 @@ async function todayLogs(req, res, next) {
         const logs = await prisma.attendanceLog.findMany({
             where: { scannedAt: { gte: trStart } },
             include: { personnel: true },
-            orderBy: { scannedAt: "desc" }
+            orderBy: { scannedAt: "desc" },
         });
 
         res.json(logs);
@@ -135,8 +144,7 @@ async function todayLogs(req, res, next) {
 }
 
 /* ---------------------------------------------------
-   4) BELİRLİ GÜN LOG'LARI
-   (CSV vs. için buraya dokunmuyoruz → eski loglar duruyor)
+   4) TARİHE GÖRE TÜM LOG'LAR (CSV için)
 --------------------------------------------------- */
 async function listLogs(req, res, next) {
     try {
@@ -146,21 +154,26 @@ async function listLogs(req, res, next) {
             return res.status(400).json({ error: "date (YYYY-MM-DD) required" });
         }
 
-        // Girilen tarihin TR'ye göre başlangıcı
-        const d = new Date(
+        // Girilen tarihi TR’ye çevir
+        const start = new Date(
             new Date(date + "T00:00:00").toLocaleString("en-US", {
                 timeZone: "Europe/Istanbul",
             })
         );
-        d.setHours(0, 0, 0, 0);
+        start.setHours(0, 0, 0, 0);
 
-        const nextDay = new Date(d);
-        nextDay.setDate(d.getDate() + 1);
+        const next = new Date(start);
+        next.setDate(start.getDate() + 1);
 
         const logs = await prisma.attendanceLog.findMany({
-            where: { scannedAt: { gte: d, lt: nextDay } },
+            where: {
+                scannedAt: {
+                    gte: start,
+                    lt: next,
+                },
+            },
             include: { personnel: true },
-            orderBy: { scannedAt: "asc" }
+            orderBy: { scannedAt: "asc" },
         });
 
         res.json(logs);
@@ -173,5 +186,5 @@ module.exports = {
     assignCard,
     scanCard,
     todayLogs,
-    listLogs
+    listLogs,
 };
