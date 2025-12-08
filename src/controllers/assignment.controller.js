@@ -3,7 +3,9 @@ const { normalizeDate } = require("../utils/date");
 
 const prisma = new PrismaClient();
 
-// TÜM ATAMALAR
+/* -----------------------------------------
+   1) TÜM ATAMALAR
+------------------------------------------ */
 async function listAssignments(req, res, next) {
     try {
         const { date, shiftId } = req.query;
@@ -35,18 +37,22 @@ async function listAssignments(req, res, next) {
     }
 }
 
-// YENİ → ASSIGNMENT GÜNCELLE (PUT)
+/* -----------------------------------------
+   2) UPDATE (PUT)
+------------------------------------------ */
 async function updateAssignment(req, res, next) {
     try {
         const id = Number(req.params.id);
-        const { stationId, personnelId, shiftId } = req.body;
+        const { stationId, personnelId, shiftId, startTime, endTime } = req.body;
 
         const updated = await prisma.assignment.update({
             where: { id },
             data: {
                 stationId: Number(stationId),
                 personnelId: Number(personnelId),
-                shiftId: Number(shiftId)
+                shiftId: Number(shiftId),
+                startTime: startTime || null,
+                endTime: endTime || null
             }
         });
 
@@ -56,7 +62,9 @@ async function updateAssignment(req, res, next) {
     }
 }
 
-// YENİ → PERSONEL GEÇMİŞİ
+/* -----------------------------------------
+   3) PERSONEL GEÇMİŞİ
+------------------------------------------ */
 async function personHistory(req, res, next) {
     try {
         const id = Number(req.params.id);
@@ -73,7 +81,9 @@ async function personHistory(req, res, next) {
     }
 }
 
-// YENİ → İSTASYON GEÇMİŞİ
+/* -----------------------------------------
+   4) İSTASYON GEÇMİŞİ
+------------------------------------------ */
 async function stationHistory(req, res, next) {
     try {
         const id = Number(req.params.id);
@@ -90,10 +100,12 @@ async function stationHistory(req, res, next) {
     }
 }
 
-// INSERT OR UPDATE
+/* -----------------------------------------
+   5) UPSERT (CREATE OR UPDATE)
+------------------------------------------ */
 async function upsertAssignment(req, res, next) {
     try {
-        const { date, shiftId, stationId, personnelId } = req.body;
+        const { date, shiftId, stationId, personnelId, startTime, endTime } = req.body;
 
         if (!date || !shiftId || !stationId || !personnelId) {
             return res.status(400).json({
@@ -108,6 +120,8 @@ async function upsertAssignment(req, res, next) {
             shiftId: Number(shiftId),
             stationId: Number(stationId),
             personnelId: Number(personnelId),
+            startTime: startTime || null,
+            endTime: endTime || null
         };
 
         const assignment = await prisma.assignment.upsert({
@@ -119,7 +133,10 @@ async function upsertAssignment(req, res, next) {
                     personnelId: data.personnelId,
                 },
             },
-            update: {},
+            update: {
+                startTime: startTime || null,
+                endTime: endTime || null
+            },
             create: data,
         });
 
@@ -129,7 +146,9 @@ async function upsertAssignment(req, res, next) {
     }
 }
 
-// DELETE
+/* -----------------------------------------
+   6) DELETE
+------------------------------------------ */
 async function deleteAssignment(req, res, next) {
     try {
         const id = Number(req.params.id);
@@ -142,7 +161,9 @@ async function deleteAssignment(req, res, next) {
     }
 }
 
-// YENİ → CSV EXPORT
+/* -----------------------------------------
+   7) CSV EXPORT
+------------------------------------------ */
 async function exportAssignments(req, res, next) {
     try {
         const { date } = req.query;
@@ -159,7 +180,7 @@ async function exportAssignments(req, res, next) {
         let csv = "Personel,İstasyon,Vardiya,Başlangıç,Bitiş\n";
 
         list.forEach(a => {
-            csv += `${a.personnel.fullName},${a.station.name},${a.shift.name},${a.shift.startTime},${a.shift.endTime}\n`;
+            csv += `${a.personnel.fullName},${a.station.name},${a.shift.name},${a.startTime || "-"},${a.endTime || "-"}\n`;
         });
 
         res.header("Content-Type", "text/csv");

@@ -1,20 +1,28 @@
 const express = require("express");
 const router = express.Router();
-const { login, createUser, me } = require("../controllers/auth.controller");
-const { authRequired, requireRole } = require("../middleware/auth");
 
-// LOGIN
-router.post("/login", login);
+const {
+    listAssignments,
+    upsertAssignment,
+    deleteAssignment,
+    updateAssignment,
+    personHistory,
+    stationHistory,
+    exportAssignments
+} = require("../controllers/assignment.controller");
 
-// TOKEN'DAN KULLANICI AL
-router.get("/me", authRequired, me);
+const { authRequired } = require("../middleware/auth");
 
-// ADMIN → Yeni kullanıcı ekleme
-router.post(
-    "/users",
-    authRequired,
-    requireRole("ADMIN"),
-    createUser
-);
+router.use(authRequired);
+
+router.get("/", listAssignments);
+router.post("/", upsertAssignment);
+router.put("/:id", updateAssignment);
+router.delete("/:id", deleteAssignment);
+
+router.get("/person/:id", personHistory);
+router.get("/station/:id", stationHistory);
+
+router.get("/export/csv", exportAssignments);
 
 module.exports = router;
