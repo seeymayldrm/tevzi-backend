@@ -150,7 +150,6 @@ async function listLogs(req, res, next) {
             return res.status(400).json({ error: "date required" });
         }
 
-        // Örn: "2025-12-09T00:00:00" TR’ye göre Date’e çevrilir
         const start = new Date(
             new Date(date + "T00:00:00").toLocaleString("en-US", {
                 timeZone: "Europe/Istanbul",
@@ -178,9 +177,72 @@ async function listLogs(req, res, next) {
     }
 }
 
+/* ---------------------------------------------------
+   ⭐⭐ YENİ: TÜM NFC KARTLARI LİSTELE
+--------------------------------------------------- */
+async function listAllCards(req, res, next) {
+    try {
+        const cards = await prisma.nFCCard.findMany({
+            include: {
+                personnel: true,
+                attendanceLogs: true,
+            },
+            orderBy: { createdAt: "desc" },
+        });
+
+        res.json(cards);
+    } catch (err) {
+        next(err);
+    }
+}
+
+/* ---------------------------------------------------
+   ⭐⭐ YENİ: NFC KART GÜNCELLE (aktif/pasif/personel)
+--------------------------------------------------- */
+async function updateCard(req, res, next) {
+    try {
+        const id = Number(req.params.id);
+        const { isActive, personnelId } = req.body;
+
+        const card = await prisma.nFCCard.update({
+            where: { id },
+            data: {
+                isActive,
+                personnelId: personnelId ? Number(personnelId) : null,
+            }
+        });
+
+        res.json(card);
+    } catch (err) {
+        next(err);
+    }
+}
+
+/* ---------------------------------------------------
+   ⭐⭐ YENİ: NFC KART SİL
+--------------------------------------------------- */
+async function deleteCard(req, res, next) {
+    try {
+        const id = Number(req.params.id);
+
+        await prisma.nFCCard.delete({
+            where: { id }
+        });
+
+        res.status(204).send();
+    } catch (err) {
+        next(err);
+    }
+}
+
 module.exports = {
     assignCard,
     scanCard,
     todayLogs,
     listLogs,
+
+    // YENİ EKLEDİKLER
+    listAllCards,
+    updateCard,
+    deleteCard
 };
