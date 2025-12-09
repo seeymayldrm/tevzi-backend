@@ -56,13 +56,15 @@ model NFCCard {
 model Station {
   id          Int          @id @default(autoincrement())
   name        String
-  code        String       @unique
+  code        String?
   department  String?
   isActive    Boolean      @default(true)
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
   assignments Assignment[]
 }
+
+
 
 model Shift {
   id          Int          @id @default(autoincrement())
