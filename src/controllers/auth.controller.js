@@ -7,6 +7,8 @@ const prisma = new PrismaClient();
 
 // LOGIN
 async function login(req, res, next) {
+    console.log("LOGIN BODY:", req.body);
+
     try {
         const { username, password } = req.body;
 
