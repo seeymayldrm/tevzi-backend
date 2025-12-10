@@ -24,7 +24,7 @@ router.get("/health", (req, res) => {
 router.use("/auth", authRoutes);
 
 // ⭐ SUPERADMIN → Company Yönetimi
-router.use("/companies", companyRoutes);
+router.use("/company", companyRoutes); // ← ← DÜZELTİLDİ
 
 // Şirket bazlı endpointler
 router.use("/personnel", personnelRoutes);

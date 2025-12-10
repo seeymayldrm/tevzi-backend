@@ -1,6 +1,6 @@
 // backend/prisma/seed.js
-const { PrismaClient, Role } = require("@prisma/client");
-const bcrypt = require("bcrypt");
+const { PrismaClient } = require("@prisma/client");
+const bcrypt = require("bcryptjs");
 require("dotenv").config();
 
 const prisma = new PrismaClient();
@@ -29,28 +29,58 @@ async function main() {
             },
         });
 
-        console.log("✔ SUPERADMIN user created:");
-        console.log("   username: superadmin");
-        console.log("   password: Super123!");
+        console.log("✔ SUPERADMIN created (username: superadmin / password: Super123!)");
     } else {
         console.log("ℹ SUPERADMIN already exists, skipping.");
     }
 
     /* -------------------------------------------------------
-       2) VT. ŞİRKET OLUŞTUR
+       2) VATAN DENİZCİLİK ŞİRKETİ YOKSA OLUŞTUR
     ------------------------------------------------------- */
-    const company = await prisma.company.upsert({
-        where: { name: "Vatan Denizcilik" },
-        update: {},
-        create: {
-            name: "Vatan Denizcilik",
-            logoUrl: null,
-            faviconUrl: null,
-            isActive: true,
-        },
+    let company = await prisma.company.findFirst({
+        where: { name: "Vatan Denizcilik" }
     });
 
-    console.log("✔ Company:", company.name);
+    if (!company) {
+        company = await prisma.company.create({
+            data: {
+                name: "Vatan Denizcilik",
+                logoUrl: null,
+                faviconUrl: null,
+                isActive: true,
+            },
+        });
+
+        console.log("✔ Company created:", company.name);
+    } else {
+        console.log("ℹ Company already exists:", company.name);
+    }
+
+    /* -------------------------------------------------------
+       3) ADMIN YOKSA OLUŞTUR
+    ------------------------------------------------------- */
+    const adminUsername = "admin";
+
+    const existingAdmin = await prisma.user.findUnique({
+        where: { username: adminUsername },
+    });
+
+    if (!existingAdmin) {
+        const hashed = await bcrypt.hash("Admin123!", 10);
+
+        await prisma.user.create({
+            data: {
+                username: adminUsername,
+                password: hashed,
+                role: "ADMIN",
+                companyId: company.id,
+            },
+        });
+
+        console.log("✔ ADMIN created (username: admin / password: Admin123!)");
+    } else {
+        console.log("ℹ ADMIN already exists, skipping.");
+    }
 
     console.log("🌱 Seeding completed!");
 }
