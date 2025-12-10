@@ -8,6 +8,7 @@ datasource db {
 }
 
 enum Role {
+  SUPERADMIN
   ADMIN
   SUPERVISOR
 }
@@ -17,14 +18,48 @@ enum AttendanceType {
   OUT
 }
 
-model User {
-  id        Int       @id @default(autoincrement())
-  username  String    @unique
-  password  String
-  role      Role      @default(SUPERVISOR)
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
+//////////////////////////////
+// COMPANY (Yeni Model)
+//////////////////////////////
+
+model Company {
+  id         Int        @id @default(autoincrement())
+  name       String
+  logoUrl    String?
+  faviconUrl String?
+  isActive   Boolean    @default(true)
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
+
+  users       User[]
+  personnel   Personnel[]
+  stations    Station[]
+  shifts      Shift[]
+  assignments Assignment[]
+  cards       NFCCard[]
+  logs        AttendanceLog[]
 }
+
+//////////////////////////////
+// USER MODEL (Şirket bağımlı)
+//////////////////////////////
+
+model User {
+  id         Int       @id @default(autoincrement())
+  username   String    @unique
+  password   String
+  role       Role      @default(SUPERVISOR)
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  // Süperadmin için NULL olabilir
+  company     Company? @relation(fields: [companyId], references: [id])
+  companyId   Int?
+}
+
+//////////////////////////////
+// PERSONNEL
+//////////////////////////////
 
 model Personnel {
   id          Int             @id @default(autoincrement())
@@ -34,24 +69,39 @@ model Personnel {
   isActive    Boolean         @default(true)
   createdAt   DateTime        @default(now())
   updatedAt   DateTime        @updatedAt
+
+  company     Company         @relation(fields: [companyId], references: [id])
+  companyId   Int
+
   cards       NFCCard[]
   assignments Assignment[]
   attendance  AttendanceLog[]
 }
+
+//////////////////////////////
+// NFC CARD
+//////////////////////////////
 
 model NFCCard {
   id          Int          @id @default(autoincrement())
   uid         String       @unique
   isActive    Boolean      @default(true)
   createdAt   DateTime     @default(now())
+
   personnel   Personnel    @relation(fields: [personnelId], references: [id])
   personnelId Int
 
-  attendanceLogs AttendanceLog[]   // <-- BUNU EKLİYORUZ
+  company     Company      @relation(fields: [companyId], references: [id])
+  companyId   Int
+
+  attendanceLogs AttendanceLog[]
 
   @@index([uid])
 }
 
+//////////////////////////////
+// STATION
+//////////////////////////////
 
 model Station {
   id          Int          @id @default(autoincrement())
@@ -61,33 +111,52 @@ model Station {
   isActive    Boolean      @default(true)
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
+
+  company     Company      @relation(fields: [companyId], references: [id])
+  companyId   Int
+
   assignments Assignment[]
 }
 
-
+//////////////////////////////
+// SHIFT
+//////////////////////////////
 
 model Shift {
   id          Int          @id @default(autoincrement())
   name        String
   code        String       @unique
-  startTime   String       // "08:00"
-  endTime     String       // "16:00"
+  startTime   String
+  endTime     String
+
+  company     Company      @relation(fields: [companyId], references: [id])
+  companyId   Int
+
   assignments Assignment[]
 }
 
+//////////////////////////////
+// ASSIGNMENT
+//////////////////////////////
+
 model Assignment {
   id          Int        @id @default(autoincrement())
-  date        DateTime   // sadece günü kullanacağız
+  date        DateTime
+
   shift       Shift      @relation(fields: [shiftId], references: [id])
   shiftId     Int
+
   station     Station    @relation(fields: [stationId], references: [id])
   stationId   Int
+
   personnel   Personnel  @relation(fields: [personnelId], references: [id])
   personnelId Int
 
-  // 🔽 FORMDA GİRDİĞİN SAATLER ARTIK BURAYA YAZILACAK
-  startTime   String?    // örn: "15:00"
-  endTime     String?    // örn: "18:00"
+  startTime   String?
+  endTime     String?
+
+  company     Company    @relation(fields: [companyId], references: [id])
+  companyId   Int
 
   createdAt   DateTime   @default(now())
   updatedAt   DateTime   @updatedAt
@@ -96,16 +165,25 @@ model Assignment {
   @@index([date, shiftId, stationId])
 }
 
+//////////////////////////////
+// ATTENDANCE LOG
+//////////////////////////////
+
 model AttendanceLog {
   id          Int             @id @default(autoincrement())
   uid         String
   type        AttendanceType
   scannedAt   DateTime        @default(now())
   source      String?
+
   personnel   Personnel?      @relation(fields: [personnelId], references: [id])
   personnelId Int?
+
   card        NFCCard?        @relation(fields: [cardId], references: [id])
   cardId      Int?
+
+  company     Company         @relation(fields: [companyId], references: [id])
+  companyId   Int
 
   @@index([uid])
   @@index([scannedAt])

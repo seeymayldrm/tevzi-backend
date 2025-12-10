@@ -1,24 +1,46 @@
 const { PrismaClient } = require("@prisma/client");
 const { normalizeDate } = require("../utils/date");
-
 const prisma = new PrismaClient();
 
-/* -----------------------------------------
-   1) TÜM ATAMALAR
------------------------------------------- */
+/* ----------------------------------------------------
+   Helper — Şirket filtresi
+---------------------------------------------------- */
+function companyFilter(req) {
+    if (req.user.role === "SUPERADMIN") return {};
+    return { companyId: req.user.companyId };
+}
+
+/* ----------------------------------------------------
+   Helper — Bir kaydın şirkete ait olup olmadığını doğrula
+---------------------------------------------------- */
+async function ensureBelongsToCompany(model, id, companyId, isSuperadmin) {
+    if (isSuperadmin) return true;
+
+    const item = await prisma[model].findFirst({
+        where: { id, companyId }
+    });
+
+    return !!item;
+}
+
+/* ----------------------------------------------------
+   1) TÜM ATAMALAR (MULTITENANT)
+---------------------------------------------------- */
 async function listAssignments(req, res, next) {
     try {
         const { date, shiftId } = req.query;
 
         if (!date) {
-            return res
-                .status(400)
-                .json({ error: "date (YYYY-MM-DD) required" });
+            return res.status(400).json({ error: "date (YYYY-MM-DD) required" });
         }
 
         const day = normalizeDate(date);
 
-        const where = { date: day };
+        const where = {
+            date: day,
+            ...companyFilter(req)
+        };
+
         if (shiftId) where.shiftId = Number(shiftId);
 
         const assignments = await prisma.assignment.findMany({
@@ -37,13 +59,38 @@ async function listAssignments(req, res, next) {
     }
 }
 
-/* -----------------------------------------
-   2) UPDATE (PUT)
------------------------------------------- */
+/* ----------------------------------------------------
+   2) UPDATE (MULTITENANT + GÜVENLİ)
+---------------------------------------------------- */
 async function updateAssignment(req, res, next) {
     try {
         const id = Number(req.params.id);
         const { stationId, personnelId, shiftId, startTime, endTime } = req.body;
+
+        // Kayıt user’ın şirketine mi ait?
+        const existing = await prisma.assignment.findFirst({
+            where: { id, ...companyFilter(req) }
+        });
+
+        if (!existing) {
+            return res.status(404).json({ error: "Assignment not found" });
+        }
+
+        const isSuperadmin = req.user.role === "SUPERADMIN";
+        const companyId = req.user.companyId;
+
+        // Yeni station, personel ve shift doğru şirkete mi ait?
+        if (!(await ensureBelongsToCompany("station", Number(stationId), companyId, isSuperadmin))) {
+            return res.status(403).json({ error: "Station does not belong to your company" });
+        }
+
+        if (!(await ensureBelongsToCompany("personnel", Number(personnelId), companyId, isSuperadmin))) {
+            return res.status(403).json({ error: "Personnel does not belong to your company" });
+        }
+
+        if (!(await ensureBelongsToCompany("shift", Number(shiftId), companyId, isSuperadmin))) {
+            return res.status(403).json({ error: "Shift does not belong to your company" });
+        }
 
         const updated = await prisma.assignment.update({
             where: { id },
@@ -62,15 +109,18 @@ async function updateAssignment(req, res, next) {
     }
 }
 
-/* -----------------------------------------
+/* ----------------------------------------------------
    3) PERSONEL GEÇMİŞİ
------------------------------------------- */
+---------------------------------------------------- */
 async function personHistory(req, res, next) {
     try {
         const id = Number(req.params.id);
 
         const list = await prisma.assignment.findMany({
-            where: { personnelId: id },
+            where: {
+                personnelId: id,
+                ...companyFilter(req)
+            },
             include: { station: true, shift: true },
             orderBy: { date: "desc" }
         });
@@ -81,15 +131,18 @@ async function personHistory(req, res, next) {
     }
 }
 
-/* -----------------------------------------
-   4) İSTASYON GEÇMİŞİ
------------------------------------------- */
+/* ----------------------------------------------------
+   4) STATION GEÇMİŞİ
+---------------------------------------------------- */
 async function stationHistory(req, res, next) {
     try {
         const id = Number(req.params.id);
 
         const list = await prisma.assignment.findMany({
-            where: { stationId: id },
+            where: {
+                stationId: id,
+                ...companyFilter(req)
+            },
             include: { personnel: true, shift: true },
             orderBy: { date: "desc" }
         });
@@ -100,9 +153,9 @@ async function stationHistory(req, res, next) {
     }
 }
 
-/* -----------------------------------------
-   5) UPSERT (CREATE OR UPDATE)
------------------------------------------- */
+/* ----------------------------------------------------
+   5) UPSERT (MULTITENANT + GÜVENLİ)
+---------------------------------------------------- */
 async function upsertAssignment(req, res, next) {
     try {
         const { date, shiftId, stationId, personnelId, startTime, endTime } = req.body;
@@ -114,6 +167,28 @@ async function upsertAssignment(req, res, next) {
         }
 
         const day = normalizeDate(date);
+        const isSuperadmin = req.user.role === "SUPERADMIN";
+
+        let companyId = req.user.companyId;
+        if (isSuperadmin) {
+            companyId = req.body.companyId;
+            if (!companyId) {
+                return res.status(400).json({ error: "companyId required for SUPERADMIN" });
+            }
+        }
+
+        // ID'ler doğru şirkete ait mi?
+        if (!(await ensureBelongsToCompany("station", Number(stationId), companyId, isSuperadmin))) {
+            return res.status(403).json({ error: "Station does not belong to your company" });
+        }
+
+        if (!(await ensureBelongsToCompany("personnel", Number(personnelId), companyId, isSuperadmin))) {
+            return res.status(403).json({ error: "Personnel does not belong to your company" });
+        }
+
+        if (!(await ensureBelongsToCompany("shift", Number(shiftId), companyId, isSuperadmin))) {
+            return res.status(403).json({ error: "Shift does not belong to your company" });
+        }
 
         const data = {
             date: day,
@@ -121,7 +196,8 @@ async function upsertAssignment(req, res, next) {
             stationId: Number(stationId),
             personnelId: Number(personnelId),
             startTime: startTime || null,
-            endTime: endTime || null
+            endTime: endTime || null,
+            companyId: Number(companyId),
         };
 
         const assignment = await prisma.assignment.upsert({
@@ -130,12 +206,12 @@ async function upsertAssignment(req, res, next) {
                     date: day,
                     shiftId: data.shiftId,
                     stationId: data.stationId,
-                    personnelId: data.personnelId,
+                    personnelId: data.personnelId
                 },
             },
             update: {
-                startTime: startTime || null,
-                endTime: endTime || null
+                startTime: data.startTime,
+                endTime: data.endTime
             },
             create: data,
         });
@@ -146,12 +222,20 @@ async function upsertAssignment(req, res, next) {
     }
 }
 
-/* -----------------------------------------
-   6) DELETE
------------------------------------------- */
+/* ----------------------------------------------------
+   6) DELETE (MULTITENANT)
+---------------------------------------------------- */
 async function deleteAssignment(req, res, next) {
     try {
         const id = Number(req.params.id);
+
+        const existing = await prisma.assignment.findFirst({
+            where: { id, ...companyFilter(req) }
+        });
+
+        if (!existing) {
+            return res.status(404).json({ error: "Assignment not found" });
+        }
 
         await prisma.assignment.delete({ where: { id } });
 
@@ -161,9 +245,9 @@ async function deleteAssignment(req, res, next) {
     }
 }
 
-/* -----------------------------------------
-   7) CSV EXPORT
------------------------------------------- */
+/* ----------------------------------------------------
+   7) CSV EXPORT (MULTITENANT)
+---------------------------------------------------- */
 async function exportAssignments(req, res, next) {
     try {
         const { date } = req.query;
@@ -173,7 +257,10 @@ async function exportAssignments(req, res, next) {
         const day = normalizeDate(date);
 
         const list = await prisma.assignment.findMany({
-            where: { date: day },
+            where: {
+                date: day,
+                ...companyFilter(req)
+            },
             include: { personnel: true, station: true, shift: true }
         });
 

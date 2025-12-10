@@ -1,19 +1,36 @@
+// backend/src/routes/auth.routes.js
 const express = require("express");
 const router = express.Router();
-const { login, createUser, me } = require("../controllers/auth.controller");
-const { authRequired, requireRole } = require("../middleware/auth");
 
-// LOGIN
+const {
+    login,
+    createUser,
+    me
+} = require("../controllers/auth.controller");
+
+const {
+    authRequired,
+    requireRole
+} = require("../middleware/auth");
+
+/* ------------------------------------------------------
+   LOGIN → Şirket aktif mi, kullanıcı aktif mi kontrol eder
+------------------------------------------------------ */
 router.post("/login", login);
 
-// TOKEN'DAN KULLANICI AL
+/* ------------------------------------------------------
+   Kullanıcıyı token'dan getir
+------------------------------------------------------ */
 router.get("/me", authRequired, me);
 
-// ADMIN → Yeni kullanıcı ekleme
+/* ------------------------------------------------------
+   SUPERADMIN → Yeni kullanıcı oluşturabilir
+   (Şirket admini başka şirkete user açamasın)
+------------------------------------------------------ */
 router.post(
     "/users",
     authRequired,
-    requireRole("ADMIN"),
+    requireRole("SUPERADMIN"),
     createUser
 );
 

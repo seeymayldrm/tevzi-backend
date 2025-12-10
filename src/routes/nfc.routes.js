@@ -1,3 +1,4 @@
+// backend/src/routes/nfc.routes.js
 const express = require("express");
 const router = express.Router();
 
@@ -13,7 +14,10 @@ const {
 
 const { authRequired, requireRole } = require("../middleware/auth");
 
-// Kart tanımlama (personel → kart)
+/* ---------------------------------------------------
+   NFC KART ATAMA
+   ADMIN + SUPERVISOR → sadece kendi şirketine kart atar
+--------------------------------------------------- */
 router.post(
     "/assign-card",
     authRequired,
@@ -21,17 +25,26 @@ router.post(
     assignCard
 );
 
-// NFC cihazı → IN/OUT
+/* ---------------------------------------------------
+   NFC OKUTMA (SCAN)
+   → Bu endpoint CİHAZ tarafından çağrıldığı için taşeron giriş yapmaz.
+   → Auth gerekmez.
+--------------------------------------------------- */
 router.post("/scan", scanCard);
 
-// Bugünün hareketleri
+/* ---------------------------------------------------
+   BUGÜN LOG'LARI
+   → Şirket admini sadece kendi şirketinin loglarını görebilir
+--------------------------------------------------- */
 router.get(
     "/today",
     authRequired,
     todayLogs
 );
 
-// Belirli günün tüm logları
+/* ---------------------------------------------------
+   TARİHE GÖRE TÜM LOG'LAR
+--------------------------------------------------- */
 router.get(
     "/logs",
     authRequired,
@@ -39,7 +52,8 @@ router.get(
 );
 
 /* ---------------------------------------------------
-   ⭐ YENİ: KART YÖNETİMİ ENDPOINT'LERİ
+   ⭐ KART YÖNETİMİ
+   ADMIN + SUPERVISOR → kendi şirketinin kartlarını görebilir
 --------------------------------------------------- */
 
 // 1) Tüm NFC kartlarını listele
@@ -50,7 +64,7 @@ router.get(
     listAllCards
 );
 
-// 2) Kart güncelle (aktif/pasif/personelId değiştirme)
+// 2) Kart güncelle (aktif/pasif/personelId)
 router.put(
     "/cards/:id",
     authRequired,

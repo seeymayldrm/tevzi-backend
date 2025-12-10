@@ -1,3 +1,5 @@
+// backend/src/app.js
+
 const express = require("express");
 const cors = require("cors");
 const morgan = require("morgan");
@@ -8,19 +10,27 @@ const { notFound, errorHandler } = require("./middleware/errorHandler");
 
 const app = express();
 
-// ---- CORS (KESİN ÇÖZÜM) ----
+/* -----------------------------------------------------
+   CORS — Tüm Frontend Senaryoları İçin Güvenli Ayar
+----------------------------------------------------- */
 app.use(
     cors({
-        origin: CORS_ORIGIN,
+        origin: (origin, callback) => {
+            // local ve deploy senaryoları için
+            if (!origin) return callback(null, true);
+            return callback(null, true);
+        },
+        credentials: true,
         methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
         allowedHeaders: ["Content-Type", "Authorization"],
-        credentials: true,
     })
 );
 
 app.options("*", cors());
 
-// ---- HELMET (CORS İLE ÇAKIŞMASIN) ----
+/* -----------------------------------------------------
+   HELMET — CORS ile Çakışmayan Güvenlik Ayarları
+----------------------------------------------------- */
 app.use(
     helmet({
         crossOriginEmbedderPolicy: false,
@@ -28,16 +38,25 @@ app.use(
     })
 );
 
-// Body parser
-app.use(express.json());
+/* -----------------------------------------------------
+   Body Parsers
+----------------------------------------------------- */
+app.use(express.json({ limit: "10mb" }));
+app.use(express.urlencoded({ extended: true }));
 
-// Logging
+/* -----------------------------------------------------
+   Logger
+----------------------------------------------------- */
 app.use(morgan("dev"));
 
-// Routes
+/* -----------------------------------------------------
+   API Routes
+----------------------------------------------------- */
 app.use("/api", routes);
 
-// Error handlers
+/* -----------------------------------------------------
+   Error handlers
+----------------------------------------------------- */
 app.use(notFound);
 app.use(errorHandler);
 
