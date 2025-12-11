@@ -1,0 +1,41 @@
+# Node modules
+node_modules/
+npm-debug.log
+yarn-debug.log
+yarn-error.log
+
+# Env files
+.env
+.env.local
+.env.development
+.env.production
+.env.test
+
+# Prisma
+prisma/.env
+prisma/migrations/*/migration.sql
+prisma/dev.db
+
+# Logs
+logs
+*.log
+debug.log
+error.log
+
+# Build outputs
+dist/
+build/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE files
+.vscode/
+.idea/
+
+# Temporary files
+*.tmp
+*.swp
+*.swo
+*.pid
