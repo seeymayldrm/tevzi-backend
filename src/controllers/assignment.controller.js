@@ -28,7 +28,7 @@ async function ensureBelongsToCompany(model, id, companyId, isSuperadmin) {
 ---------------------------------------------------- */
 async function listAssignments(req, res, next) {
     try {
-        const { date, shiftId } = req.query;
+        const { date, shiftId, stationId } = req.query;
 
         if (!date) {
             return res.status(400).json({ error: "date (YYYY-MM-DD) required" });
@@ -42,6 +42,7 @@ async function listAssignments(req, res, next) {
         };
 
         if (shiftId) where.shiftId = Number(shiftId);
+        if (stationId) where.stationId = Number(stationId);   // 🔥 EKLENEN KISIM
 
         const assignments = await prisma.assignment.findMany({
             where,
@@ -58,6 +59,7 @@ async function listAssignments(req, res, next) {
         next(err);
     }
 }
+
 
 /* ----------------------------------------------------
    2) UPDATE (MULTITENANT + GÜVENLİ)
