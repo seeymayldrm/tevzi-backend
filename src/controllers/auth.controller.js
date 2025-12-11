@@ -6,7 +6,7 @@ const { comparePassword, hashPassword } = require("../utils/password");
 const prisma = new PrismaClient();
 
 /* ---------------------------------------------------------
-   LOGIN (SUPERADMIN + COMPANY CHECK)
+   LOGIN (SUPERADMIN + COMPANY CHECK + COMPANY INFO RETURN)
 --------------------------------------------------------- */
 async function login(req, res, next) {
     try {
@@ -18,7 +18,9 @@ async function login(req, res, next) {
 
         const user = await prisma.user.findUnique({
             where: { username },
-            include: { company: true }
+            include: {
+                company: true
+            }
         });
 
         if (!user) {
@@ -58,7 +60,15 @@ async function login(req, res, next) {
                 id: user.id,
                 username: user.username,
                 role: user.role,
-                companyId: user.companyId ?? null
+                companyId: user.companyId ?? null,
+                company: user.company
+                    ? {
+                        id: user.company.id,
+                        name: user.company.name,
+                        logoUrl: user.company.logoUrl,
+                        faviconUrl: user.company.faviconUrl
+                    }
+                    : null
             }
         });
 
@@ -78,7 +88,15 @@ async function me(req, res, next) {
                 id: true,
                 username: true,
                 role: true,
-                companyId: true
+                companyId: true,
+                company: {
+                    select: {
+                        id: true,
+                        name: true,
+                        logoUrl: true,
+                        faviconUrl: true
+                    }
+                }
             }
         });
 
@@ -103,10 +121,7 @@ async function createUser(req, res, next) {
 
         let targetCompanyId = companyId;
 
-        /* -------------------------------
-           ADMIN → sadece kendi şirketine user ekler
-           ve sadece SUPERVISOR oluşturabilir.
-        -------------------------------- */
+        // ADMIN → sadece kendi şirketine user ekler + sadece SUPERVISOR oluşturabilir.
         if (req.user.role === "ADMIN") {
             targetCompanyId = req.user.companyId;
 
@@ -117,9 +132,7 @@ async function createUser(req, res, next) {
             }
         }
 
-        /* -------------------------------
-           SUPERADMIN → companyId zorunlu
-        -------------------------------- */
+        // SUPERADMIN → companyId zorunlu
         if (req.user.role === "SUPERADMIN") {
             if (!targetCompanyId) {
                 return res.status(400).json({
@@ -127,7 +140,6 @@ async function createUser(req, res, next) {
                 });
             }
 
-            // Şirket var mı kontrol
             const exists = await prisma.company.findUnique({
                 where: { id: Number(targetCompanyId) }
             });
@@ -139,9 +151,6 @@ async function createUser(req, res, next) {
             }
         }
 
-        /* -------------------------------
-           Şifre hash
-        -------------------------------- */
         const hashed = await hashPassword(password);
 
         const user = await prisma.user.create({
