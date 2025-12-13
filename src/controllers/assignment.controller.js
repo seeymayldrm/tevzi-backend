@@ -17,14 +17,14 @@ async function ensureBelongsToCompany(model, id, companyId, isSuperadmin) {
     if (isSuperadmin) return true;
 
     const item = await prisma[model].findFirst({
-        where: { id, companyId }
+        where: { id, companyId },
     });
 
     return !!item;
 }
 
 /* ----------------------------------------------------
-   1) TÜM ATAMALAR (MULTITENANT)
+   1) TÜM ATAMALAR (MULTITENANT + FK UYUMLU)
 ---------------------------------------------------- */
 async function listAssignments(req, res, next) {
     try {
@@ -38,16 +38,25 @@ async function listAssignments(req, res, next) {
 
         const where = {
             date: day,
-            ...companyFilter(req)
+            ...companyFilter(req),
         };
 
         if (shiftId) where.shiftId = Number(shiftId);
-        if (stationId) where.stationId = Number(stationId);   // 🔥 EKLENEN KISIM
+        if (stationId) where.stationId = Number(stationId);
 
         const assignments = await prisma.assignment.findMany({
             where,
             include: {
-                personnel: true,
+                personnel: {
+                    include: {
+                        departmentRel: {
+                            select: {
+                                id: true,
+                                name: true,
+                            },
+                        },
+                    },
+                },
                 station: true,
                 shift: true,
             },
@@ -60,7 +69,6 @@ async function listAssignments(req, res, next) {
     }
 }
 
-
 /* ----------------------------------------------------
    2) UPDATE (MULTITENANT + GÜVENLİ)
 ---------------------------------------------------- */
@@ -69,9 +77,8 @@ async function updateAssignment(req, res, next) {
         const id = Number(req.params.id);
         const { stationId, personnelId, shiftId, startTime, endTime } = req.body;
 
-        // Kayıt user’ın şirketine mi ait?
         const existing = await prisma.assignment.findFirst({
-            where: { id, ...companyFilter(req) }
+            where: { id, ...companyFilter(req) },
         });
 
         if (!existing) {
@@ -81,7 +88,6 @@ async function updateAssignment(req, res, next) {
         const isSuperadmin = req.user.role === "SUPERADMIN";
         const companyId = req.user.companyId;
 
-        // Yeni station, personel ve shift doğru şirkete mi ait?
         if (!(await ensureBelongsToCompany("station", Number(stationId), companyId, isSuperadmin))) {
             return res.status(403).json({ error: "Station does not belong to your company" });
         }
@@ -101,8 +107,8 @@ async function updateAssignment(req, res, next) {
                 personnelId: Number(personnelId),
                 shiftId: Number(shiftId),
                 startTime: startTime || null,
-                endTime: endTime || null
-            }
+                endTime: endTime || null,
+            },
         });
 
         res.json(updated);
@@ -121,10 +127,13 @@ async function personHistory(req, res, next) {
         const list = await prisma.assignment.findMany({
             where: {
                 personnelId: id,
-                ...companyFilter(req)
+                ...companyFilter(req),
             },
-            include: { station: true, shift: true },
-            orderBy: { date: "desc" }
+            include: {
+                station: true,
+                shift: true,
+            },
+            orderBy: { date: "desc" },
         });
 
         res.json(list);
@@ -143,10 +152,22 @@ async function stationHistory(req, res, next) {
         const list = await prisma.assignment.findMany({
             where: {
                 stationId: id,
-                ...companyFilter(req)
+                ...companyFilter(req),
             },
-            include: { personnel: true, shift: true },
-            orderBy: { date: "desc" }
+            include: {
+                personnel: {
+                    include: {
+                        departmentRel: {
+                            select: {
+                                id: true,
+                                name: true,
+                            },
+                        },
+                    },
+                },
+                shift: true,
+            },
+            orderBy: { date: "desc" },
         });
 
         res.json(list);
@@ -179,7 +200,6 @@ async function upsertAssignment(req, res, next) {
             }
         }
 
-        // ID'ler doğru şirkete ait mi?
         if (!(await ensureBelongsToCompany("station", Number(stationId), companyId, isSuperadmin))) {
             return res.status(403).json({ error: "Station does not belong to your company" });
         }
@@ -208,12 +228,12 @@ async function upsertAssignment(req, res, next) {
                     date: day,
                     shiftId: data.shiftId,
                     stationId: data.stationId,
-                    personnelId: data.personnelId
+                    personnelId: data.personnelId,
                 },
             },
             update: {
                 startTime: data.startTime,
-                endTime: data.endTime
+                endTime: data.endTime,
             },
             create: data,
         });
@@ -232,7 +252,7 @@ async function deleteAssignment(req, res, next) {
         const id = Number(req.params.id);
 
         const existing = await prisma.assignment.findFirst({
-            where: { id, ...companyFilter(req) }
+            where: { id, ...companyFilter(req) },
         });
 
         if (!existing) {
@@ -248,7 +268,7 @@ async function deleteAssignment(req, res, next) {
 }
 
 /* ----------------------------------------------------
-   7) CSV EXPORT (MULTITENANT)
+   7) CSV EXPORT (MULTITENANT + FK)
 ---------------------------------------------------- */
 async function exportAssignments(req, res, next) {
     try {
@@ -261,21 +281,32 @@ async function exportAssignments(req, res, next) {
         const list = await prisma.assignment.findMany({
             where: {
                 date: day,
-                ...companyFilter(req)
+                ...companyFilter(req),
             },
-            include: { personnel: true, station: true, shift: true }
+            include: {
+                personnel: {
+                    include: {
+                        departmentRel: {
+                            select: {
+                                name: true,
+                            },
+                        },
+                    },
+                },
+                station: true,
+                shift: true,
+            },
         });
 
-        let csv = "Personel,İstasyon,Vardiya,Başlangıç,Bitiş\n";
+        let csv = "Personel,Departman,İstasyon,Vardiya,Başlangıç,Bitiş\n";
 
         list.forEach(a => {
-            csv += `${a.personnel.fullName},${a.station.name},${a.shift.name},${a.startTime || "-"},${a.endTime || "-"}\n`;
+            csv += `${a.personnel.fullName},${a.personnel.departmentRel?.name || ""},${a.station.name},${a.shift.name},${a.startTime || "-"},${a.endTime || "-"}\n`;
         });
 
         res.header("Content-Type", "text/csv");
         res.attachment("tevzi.csv");
         res.send(csv);
-
     } catch (err) {
         next(err);
     }
@@ -288,5 +319,5 @@ module.exports = {
     updateAssignment,
     personHistory,
     stationHistory,
-    exportAssignments
+    exportAssignments,
 };
