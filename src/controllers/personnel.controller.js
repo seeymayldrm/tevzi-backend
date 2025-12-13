@@ -2,14 +2,14 @@ const { PrismaClient } = require("@prisma/client");
 const prisma = new PrismaClient();
 
 /* ---------------------------------------------------
-   PERSONNEL LIST (MULTITENANT)
+   PERSONNEL LIST (MULTITENANT + FK DEPARTMENT)
 --------------------------------------------------- */
 async function listPersonnel(req, res, next) {
     try {
         const { active } = req.query;
 
         const where = {
-            companyId: req.user.companyId || undefined
+            companyId: req.user.companyId || undefined,
         };
 
         if (active === "true") where.isActive = true;
@@ -18,7 +18,10 @@ async function listPersonnel(req, res, next) {
         const people = await prisma.personnel.findMany({
             where,
             orderBy: { fullName: "asc" },
-            include: { cards: true },
+            include: {
+                cards: true,
+                departmentRel: true, // ⭐ FK'dan departman adı için
+            },
         });
 
         res.json(people);
@@ -28,11 +31,11 @@ async function listPersonnel(req, res, next) {
 }
 
 /* ---------------------------------------------------
-   CREATE PERSONNEL (MULTITENANT)
+   CREATE PERSONNEL (MULTITENANT + FK)
 --------------------------------------------------- */
 async function createPersonnel(req, res, next) {
     try {
-        const { fullName, department, title } = req.body;
+        const { fullName, departmentId, title } = req.body;
         const companyId = req.user.companyId;
 
         if (!fullName) {
@@ -42,9 +45,15 @@ async function createPersonnel(req, res, next) {
         const person = await prisma.personnel.create({
             data: {
                 fullName,
-                department: department || null,
                 title: title || null,
-                companyId, // ⭐ şirket bağlantısı
+
+                // 🔥 YENİ SİSTEM
+                departmentId: departmentId || null,
+
+                // 🔴 ESKİ ALAN (istersek ileride kaldırırız)
+                department: null,
+
+                companyId,
             },
         });
 
@@ -55,22 +64,21 @@ async function createPersonnel(req, res, next) {
 }
 
 /* ---------------------------------------------------
-   UPDATE PERSONNEL (MULTITENANT)
+   UPDATE PERSONNEL (MULTITENANT + FK)
 --------------------------------------------------- */
 async function updatePersonnel(req, res, next) {
     try {
         const id = Number(req.params.id);
         const companyId = req.user.companyId;
-        const { fullName, department, title, isActive } = req.body;
+        const { fullName, departmentId, title, isActive } = req.body;
 
-        // Bu personel gerçekten şirketinize mi ait?
         const existing = await prisma.personnel.findFirst({
-            where: { id, companyId }
+            where: { id, companyId },
         });
 
         if (!existing && req.user.role !== "SUPERADMIN") {
             return res.status(403).json({
-                error: "Personnel does not belong to your company."
+                error: "Personnel does not belong to your company.",
             });
         }
 
@@ -78,9 +86,11 @@ async function updatePersonnel(req, res, next) {
             where: { id },
             data: {
                 fullName,
-                department,
                 title,
                 isActive,
+
+                // 🔥 FK UPDATE
+                departmentId: departmentId || null,
             },
         });
 
@@ -91,7 +101,7 @@ async function updatePersonnel(req, res, next) {
 }
 
 /* ---------------------------------------------------
-   DELETE PERSONNEL (SOFT DELETE) (MULTITENANT)
+   DELETE PERSONNEL (SOFT DELETE)
 --------------------------------------------------- */
 async function deletePersonnel(req, res, next) {
     try {
@@ -99,18 +109,18 @@ async function deletePersonnel(req, res, next) {
         const companyId = req.user.companyId;
 
         const person = await prisma.personnel.findFirst({
-            where: { id, companyId }
+            where: { id, companyId },
         });
 
         if (!person && req.user.role !== "SUPERADMIN") {
             return res.status(403).json({
-                error: "Personnel does not belong to your company."
+                error: "Personnel does not belong to your company.",
             });
         }
 
         await prisma.personnel.update({
             where: { id },
-            data: { isActive: false }
+            data: { isActive: false },
         });
 
         res.status(204).send();
@@ -120,27 +130,26 @@ async function deletePersonnel(req, res, next) {
 }
 
 /* ---------------------------------------------------
-   LIST PERSONNEL'S CARDS (MULTITENANT)
+   LIST PERSONNEL'S CARDS
 --------------------------------------------------- */
 async function listCards(req, res, next) {
     try {
         const id = Number(req.params.id);
         const companyId = req.user.companyId;
 
-        // Personel şirkete mi ait?
         const person = await prisma.personnel.findFirst({
-            where: { id, companyId }
+            where: { id, companyId },
         });
 
         if (!person && req.user.role !== "SUPERADMIN") {
             return res.status(403).json({
-                error: "Personnel does not belong to your company."
+                error: "Personnel does not belong to your company.",
             });
         }
 
         const cards = await prisma.nFCCard.findMany({
             where: { personnelId: id },
-            orderBy: { createdAt: "desc" }
+            orderBy: { createdAt: "desc" },
         });
 
         res.json(cards);
@@ -154,5 +163,5 @@ module.exports = {
     createPersonnel,
     updatePersonnel,
     deletePersonnel,
-    listCards
+    listCards,
 };
