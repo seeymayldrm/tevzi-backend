@@ -9,7 +9,7 @@ async function listPersonnel(req, res, next) {
         const { active } = req.query;
 
         const where = {
-            companyId: req.user.companyId || undefined,
+            companyId: req.user.companyId,
         };
 
         if (active === "true") where.isActive = true;
@@ -20,7 +20,12 @@ async function listPersonnel(req, res, next) {
             orderBy: { fullName: "asc" },
             include: {
                 cards: true,
-                departmentRel: true, // ⭐ FK'dan departman adı için
+                departmentRel: {
+                    select: {
+                        id: true,
+                        name: true,
+                    },
+                },
             },
         });
 
@@ -44,14 +49,11 @@ async function createPersonnel(req, res, next) {
 
         const person = await prisma.personnel.create({
             data: {
-                fullName,
+                fullName: fullName.trim(),
                 title: title || null,
 
-                // 🔥 YENİ SİSTEM
-                departmentId: departmentId || null,
-
-                // 🔴 ESKİ ALAN (istersek ileride kaldırırız)
-                department: null,
+                // ✅ SADECE FK
+                departmentId: departmentId ? Number(departmentId) : null,
 
                 companyId,
             },
@@ -85,12 +87,12 @@ async function updatePersonnel(req, res, next) {
         const person = await prisma.personnel.update({
             where: { id },
             data: {
-                fullName,
+                fullName: fullName?.trim(),
                 title,
                 isActive,
 
-                // 🔥 FK UPDATE
-                departmentId: departmentId || null,
+                // ✅ FK UPDATE
+                departmentId: departmentId ? Number(departmentId) : null,
             },
         });
 
