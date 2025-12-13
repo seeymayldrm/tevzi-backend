@@ -66,7 +66,7 @@ async function assignCard(req, res, next) {
             data: {
                 uid,
                 companyId: Number(companyId),
-                personnelId: Number(personnelId),
+                personnelId: Number(personnelId), // CREATE'de OK
                 isActive: true,
             },
         });
@@ -253,7 +253,7 @@ async function listAllCards(req, res, next) {
 }
 
 /* ---------------------------------------------------
-   6) KART GÜNCELLEME
+   6) KART GÜNCELLEME (FK DOĞRU)
 --------------------------------------------------- */
 async function updateCard(req, res, next) {
     try {
@@ -277,6 +277,11 @@ async function updateCard(req, res, next) {
 
         const { isActive, personnelId } = req.body;
 
+        const data = {
+            isActive,
+        };
+
+        // Personel bağla
         if (personnelId) {
             const belongs = await prisma.personnel.findFirst({
                 where: {
@@ -290,14 +295,20 @@ async function updateCard(req, res, next) {
                     error: "Personnel does not belong to this company.",
                 });
             }
+
+            data.personnel = {
+                connect: { id: Number(personnelId) },
+            };
+        }
+
+        // Personelden ayır
+        if (personnelId === null) {
+            data.personnel = { disconnect: true };
         }
 
         const updated = await prisma.nFCCard.update({
             where: { id },
-            data: {
-                isActive,
-                personnelId: personnelId ? Number(personnelId) : null,
-            },
+            data,
         });
 
         res.json(updated);

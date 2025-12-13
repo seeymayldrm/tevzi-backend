@@ -35,7 +35,7 @@ async function createDepartment(req, res, next) {
     try {
         const { name } = req.body;
 
-        if (!name) {
+        if (!name || name.trim() === "") {
             return res.status(400).json({ error: "name is required" });
         }
 
@@ -54,7 +54,7 @@ async function createDepartment(req, res, next) {
             data: {
                 name: name.trim(),
                 companyId: Number(companyId),
-                isActive: true
+                isActive: true,
             },
         });
 
@@ -65,7 +65,7 @@ async function createDepartment(req, res, next) {
 }
 
 /* ---------------------------------------------------
-   3) UPDATE DEPARTMENT (MULTITENANT SAFE)
+   3) UPDATE DEPARTMENT (MULTITENANT SAFE + GUARD)
 --------------------------------------------------- */
 async function updateDepartment(req, res, next) {
     try {
@@ -87,8 +87,14 @@ async function updateDepartment(req, res, next) {
         const updated = await prisma.department.update({
             where: { id },
             data: {
-                name: name?.trim(),
-                isActive,
+                // 🔒 boş string gelirse ismi bozmaz
+                name:
+                    typeof name === "string" && name.trim() !== ""
+                        ? name.trim()
+                        : undefined,
+
+                // undefined gelirse eski değer korunur
+                isActive: typeof isActive === "boolean" ? isActive : undefined,
             },
         });
 
@@ -99,7 +105,7 @@ async function updateDepartment(req, res, next) {
 }
 
 /* ---------------------------------------------------
-   4) SOFT DELETE (MULTITENANT SAFE)
+   4) SOFT DELETE (FK SAFE)
 --------------------------------------------------- */
 async function deleteDepartment(req, res, next) {
     try {
@@ -115,6 +121,28 @@ async function deleteDepartment(req, res, next) {
 
         if (!department) {
             return res.status(404).json({ error: "Department not found" });
+        }
+
+        // 🔥 FK KONTROL — PERSONNEL
+        const usedByPersonnel = await prisma.personnel.findFirst({
+            where: { departmentId: id },
+        });
+
+        if (usedByPersonnel) {
+            return res.status(400).json({
+                error: "Department is used by personnel and cannot be disabled",
+            });
+        }
+
+        // 🔥 FK KONTROL — STATION
+        const usedByStation = await prisma.station.findFirst({
+            where: { departmentId: id },
+        });
+
+        if (usedByStation) {
+            return res.status(400).json({
+                error: "Department is used by stations and cannot be disabled",
+            });
         }
 
         await prisma.department.update({
