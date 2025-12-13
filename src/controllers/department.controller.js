@@ -7,9 +7,9 @@ const prisma = new PrismaClient();
 async function listDepartments(req, res, next) {
     try {
         const { active } = req.query;
+
         const where = {};
 
-        // MULTITENANT
         if (req.user.role !== "SUPERADMIN") {
             where.companyId = req.user.companyId;
         }
@@ -54,6 +54,7 @@ async function createDepartment(req, res, next) {
             data: {
                 name: name.trim(),
                 companyId: Number(companyId),
+                isActive: true
             },
         });
 
@@ -64,26 +65,23 @@ async function createDepartment(req, res, next) {
 }
 
 /* ---------------------------------------------------
-   3) UPDATE DEPARTMENT
+   3) UPDATE DEPARTMENT (MULTITENANT SAFE)
 --------------------------------------------------- */
 async function updateDepartment(req, res, next) {
     try {
         const id = Number(req.params.id);
         const { name, isActive } = req.body;
 
-        const department = await prisma.department.findUnique({
-            where: { id },
-        });
+        const where = { id };
+
+        if (req.user.role !== "SUPERADMIN") {
+            where.companyId = req.user.companyId;
+        }
+
+        const department = await prisma.department.findFirst({ where });
 
         if (!department) {
             return res.status(404).json({ error: "Department not found" });
-        }
-
-        if (
-            req.user.role !== "SUPERADMIN" &&
-            department.companyId !== req.user.companyId
-        ) {
-            return res.status(403).json({ error: "Forbidden" });
         }
 
         const updated = await prisma.department.update({
@@ -101,25 +99,22 @@ async function updateDepartment(req, res, next) {
 }
 
 /* ---------------------------------------------------
-   4) SOFT DELETE
+   4) SOFT DELETE (MULTITENANT SAFE)
 --------------------------------------------------- */
 async function deleteDepartment(req, res, next) {
     try {
         const id = Number(req.params.id);
 
-        const department = await prisma.department.findUnique({
-            where: { id },
-        });
+        const where = { id };
+
+        if (req.user.role !== "SUPERADMIN") {
+            where.companyId = req.user.companyId;
+        }
+
+        const department = await prisma.department.findFirst({ where });
 
         if (!department) {
             return res.status(404).json({ error: "Department not found" });
-        }
-
-        if (
-            req.user.role !== "SUPERADMIN" &&
-            department.companyId !== req.user.companyId
-        ) {
-            return res.status(403).json({ error: "Forbidden" });
         }
 
         await prisma.department.update({

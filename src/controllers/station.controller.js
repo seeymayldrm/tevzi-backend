@@ -2,14 +2,13 @@ const { PrismaClient } = require("@prisma/client");
 const prisma = new PrismaClient();
 
 /* ---------------------------------------------------
-   1) STATION LIST — Şirkete göre filtre
+   1) STATION LIST — Şirkete göre filtre (FK DEPARTMENT)
 --------------------------------------------------- */
 async function listStations(req, res, next) {
     try {
         const { active } = req.query;
         const where = {};
 
-        // MULTITENANT → Eğer superadmin değilse sadece kendi şirketi
         if (req.user.role !== "SUPERADMIN") {
             where.companyId = req.user.companyId;
         }
@@ -20,6 +19,9 @@ async function listStations(req, res, next) {
         const stations = await prisma.station.findMany({
             where,
             orderBy: { code: "asc" },
+            include: {
+                departmentRel: true, // 🔥 FK departman
+            },
         });
 
         res.json(stations);
@@ -29,17 +31,16 @@ async function listStations(req, res, next) {
 }
 
 /* ---------------------------------------------------
-   2) CREATE STATION — Şirkete bağlı oluşturma
+   2) CREATE STATION — FK DEPARTMENT
 --------------------------------------------------- */
 async function createStation(req, res, next) {
     try {
-        const { name, code, department } = req.body;
+        const { name, code, departmentId } = req.body;
 
         if (!name) {
             return res.status(400).json({ error: "name is required" });
         }
 
-        // Superadmin isterse başka şirkete ekleyebilir
         const companyId =
             req.user.role === "SUPERADMIN"
                 ? req.body.companyId
@@ -51,13 +52,17 @@ async function createStation(req, res, next) {
             });
         }
 
-        const cleanCode = code?.trim() || null;
-
         const station = await prisma.station.create({
             data: {
                 name,
-                code: cleanCode,
-                department: department?.trim() || null,
+                code: code?.trim() || null,
+
+                // 🔥 YENİ FK
+                departmentId: departmentId ? Number(departmentId) : null,
+
+                // 🔴 ESKİ STRING ALAN — DOKUNMUYORUZ (şimdilik)
+                department: null,
+
                 companyId: Number(companyId),
             },
         });
@@ -69,14 +74,13 @@ async function createStation(req, res, next) {
 }
 
 /* ---------------------------------------------------
-   3) UPDATE STATION — Şirket doğrulaması ile
+   3) UPDATE STATION — FK DEPARTMENT
 --------------------------------------------------- */
 async function updateStation(req, res, next) {
     try {
         const id = Number(req.params.id);
-        const { name, code, department, isActive } = req.body;
+        const { name, code, departmentId, isActive } = req.body;
 
-        // İstasyon gerçekten bu şirkete mi ait?
         const station = await prisma.station.findUnique({
             where: { id },
         });
@@ -97,8 +101,10 @@ async function updateStation(req, res, next) {
             data: {
                 name,
                 code: code?.trim() || null,
-                department: department?.trim() || null,
                 isActive,
+
+                // 🔥 FK UPDATE
+                departmentId: departmentId ? Number(departmentId) : null,
             },
         });
 
@@ -109,7 +115,7 @@ async function updateStation(req, res, next) {
 }
 
 /* ---------------------------------------------------
-   4) DELETE (SOFT DELETE) — Şirket doğrulaması ile
+   4) DELETE STATION (SOFT DELETE)
 --------------------------------------------------- */
 async function deleteStation(req, res, next) {
     try {

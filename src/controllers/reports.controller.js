@@ -7,19 +7,16 @@ async function attendanceReport(req, res, next) {
 
         if (!date) return res.status(400).json({ error: "date required" });
 
-        // Tarih aralığı
         const d = new Date(date);
         d.setHours(0, 0, 0, 0);
 
         const nextDay = new Date(d);
         nextDay.setDate(d.getDate() + 1);
 
-        // Multitenant filtre
         const where = {
             scannedAt: { gte: d, lt: nextDay },
         };
 
-        // Eğer superadmin değilse → sadece kendi şirketini görür
         if (req.user.role !== "SUPERADMIN") {
             where.personnel = {
                 companyId: req.user.companyId
@@ -28,19 +25,28 @@ async function attendanceReport(req, res, next) {
 
         const logs = await prisma.attendanceLog.findMany({
             where,
-            include: { personnel: true },
+            include: {
+                personnel: {
+                    include: {
+                        departmentRel: true
+                    }
+                }
+            },
             orderBy: { scannedAt: "asc" }
         });
 
-        // CSV Oluştur
-        let csv = "Personel,UID,Tip,Saat\n";
+        let csv = "Personel,Departman,UID,Tip,Saat\n";
 
         logs.forEach(l => {
             csv += [
                 l.personnel?.fullName || "-",
+                l.personnel?.departmentRel?.name || "-",
                 l.uid,
                 l.type,
-                l.scannedAt.toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" })
+                l.scannedAt.toLocaleTimeString("tr-TR", {
+                    hour: "2-digit",
+                    minute: "2-digit"
+                })
             ].join(",") + "\n";
         });
 

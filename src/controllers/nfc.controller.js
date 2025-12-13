@@ -33,32 +33,33 @@ async function assignCard(req, res, next) {
     try {
         let { personnelId, uid, companyId } = req.body;
 
-        // ADMIN ve SUPERVISOR kendi şirketine atama yapabilir
         if (!isSuperadmin(req)) {
             companyId = req.user.companyId;
         }
 
         if (!personnelId || !uid || !companyId) {
             return res.status(400).json({
-                error: "personnelId, uid and companyId are required"
+                error: "personnelId, uid and companyId are required",
             });
         }
 
-        // Personel doğru şirkete mi ait?
         const person = await prisma.personnel.findFirst({
-            where: { id: Number(personnelId), companyId: Number(companyId) }
+            where: {
+                id: Number(personnelId),
+                companyId: Number(companyId),
+            },
         });
 
         if (!person) {
             return res.status(403).json({
-                error: "Personnel does not belong to this company."
+                error: "Personnel does not belong to this company.",
             });
         }
 
-        // Aynı UID varsa o şirkette pasif yap
+        // Aynı UID'li eski kartları pasif yap
         await prisma.nFCCard.updateMany({
             where: { uid, companyId: Number(companyId) },
-            data: { isActive: false }
+            data: { isActive: false },
         });
 
         const card = await prisma.nFCCard.create({
@@ -66,8 +67,8 @@ async function assignCard(req, res, next) {
                 uid,
                 companyId: Number(companyId),
                 personnelId: Number(personnelId),
-                isActive: true
-            }
+                isActive: true,
+            },
         });
 
         res.status(201).json(card);
@@ -77,7 +78,7 @@ async function assignCard(req, res, next) {
 }
 
 /* ---------------------------------------------------
-   2) NFC OKUTMA (SCAN) — CİHAZ TARAFI
+   2) NFC OKUTMA (SCAN)
 --------------------------------------------------- */
 async function scanCard(req, res, next) {
     try {
@@ -91,37 +92,41 @@ async function scanCard(req, res, next) {
             return res.status(400).json({ error: "type must be IN or OUT" });
         }
 
-        // Kartı bul (şirket bilgisi içeriyor)
         const card = await prisma.nFCCard.findFirst({
             where: { uid, isActive: true },
-            include: { personnel: true }
+            include: {
+                personnel: {
+                    include: {
+                        departmentRel: true, // ✅ FK
+                    },
+                },
+            },
         });
 
         if (!card) {
             return res.status(404).json({
                 error: "CARD_NOT_FOUND",
-                message: "No active card with this UID"
+                message: "No active card with this UID",
             });
         }
 
         const companyId = card.companyId;
         const startOfDay = getTurkeyStartOfDay();
 
-        // Bu kart bugün aynı işlemi yaptı mı?
         const existing = await prisma.attendanceLog.findFirst({
             where: {
                 uid,
                 companyId,
                 type: type === "IN" ? AttendanceType.IN : AttendanceType.OUT,
-                scannedAt: { gte: startOfDay }
-            }
+                scannedAt: { gte: startOfDay },
+            },
         });
 
         if (existing) {
             return res.status(409).json({
                 error: "ALREADY_SCANNED",
                 message: `This card already did ${type} today.`,
-                type
+                type,
             });
         }
 
@@ -135,23 +140,22 @@ async function scanCard(req, res, next) {
                 scannedAt: trNow,
                 personnelId: card.personnelId,
                 cardId: card.id,
-                companyId
-            }
+                companyId,
+            },
         });
 
         res.json({
             status: "ok",
             matchedPersonnel: card.personnel,
-            log
+            log,
         });
-
     } catch (err) {
         next(err);
     }
 }
 
 /* ---------------------------------------------------
-   3) BUGÜNÜN LOG'LARI (Multitenant)
+   3) BUGÜNÜN LOG'LARI
 --------------------------------------------------- */
 async function todayLogs(req, res, next) {
     try {
@@ -159,9 +163,18 @@ async function todayLogs(req, res, next) {
         const startOfDay = getTurkeyStartOfDay();
 
         const logs = await prisma.attendanceLog.findMany({
-            where: { companyId, scannedAt: { gte: startOfDay } },
-            include: { personnel: true },
-            orderBy: { scannedAt: "desc" }
+            where: {
+                companyId,
+                scannedAt: { gte: startOfDay },
+            },
+            include: {
+                personnel: {
+                    include: {
+                        departmentRel: true, // ✅ FK
+                    },
+                },
+            },
+            orderBy: { scannedAt: "desc" },
         });
 
         res.json(logs);
@@ -171,14 +184,16 @@ async function todayLogs(req, res, next) {
 }
 
 /* ---------------------------------------------------
-   4) Belirli Günün Logları
+   4) BELİRLİ GÜN LOG'LARI
 --------------------------------------------------- */
 async function listLogs(req, res, next) {
     try {
         const { date } = req.query;
         const companyId = req.user.companyId;
 
-        if (!date) return res.status(400).json({ error: "date required" });
+        if (!date) {
+            return res.status(400).json({ error: "date required" });
+        }
 
         const start = new Date(
             new Date(date + "T00:00:00").toLocaleString("en-US", {
@@ -193,10 +208,16 @@ async function listLogs(req, res, next) {
         const logs = await prisma.attendanceLog.findMany({
             where: {
                 companyId,
-                scannedAt: { gte: start, lt: nextDay }
+                scannedAt: { gte: start, lt: nextDay },
             },
-            include: { personnel: true },
-            orderBy: { scannedAt: "asc" }
+            include: {
+                personnel: {
+                    include: {
+                        departmentRel: true, // ✅ FK
+                    },
+                },
+            },
+            orderBy: { scannedAt: "asc" },
         });
 
         res.json(logs);
@@ -206,7 +227,7 @@ async function listLogs(req, res, next) {
 }
 
 /* ---------------------------------------------------
-   5) Kart Listeleme
+   5) TÜM KARTLAR
 --------------------------------------------------- */
 async function listAllCards(req, res, next) {
     try {
@@ -214,8 +235,15 @@ async function listAllCards(req, res, next) {
 
         const cards = await prisma.nFCCard.findMany({
             where: { companyId },
-            include: { personnel: true, attendanceLogs: true },
-            orderBy: { createdAt: "desc" }
+            include: {
+                personnel: {
+                    include: {
+                        departmentRel: true, // ✅ FK
+                    },
+                },
+                attendanceLogs: true,
+            },
+            orderBy: { createdAt: "desc" },
         });
 
         res.json(cards);
@@ -225,7 +253,7 @@ async function listAllCards(req, res, next) {
 }
 
 /* ---------------------------------------------------
-   6) Kart Güncelleme
+   6) KART GÜNCELLEME
 --------------------------------------------------- */
 async function updateCard(req, res, next) {
     try {
@@ -233,12 +261,18 @@ async function updateCard(req, res, next) {
         const requesterCompanyId = req.user.companyId;
         const superadmin = isSuperadmin(req);
 
-        const existing = await prisma.nFCCard.findUnique({ where: { id } });
+        const existing = await prisma.nFCCard.findUnique({
+            where: { id },
+        });
 
-        if (!existing) return res.status(404).json({ error: "Card not found" });
+        if (!existing) {
+            return res.status(404).json({ error: "Card not found" });
+        }
 
         if (!superadmin && existing.companyId !== requesterCompanyId) {
-            return res.status(403).json({ error: "Forbidden (company mismatch)" });
+            return res.status(403).json({
+                error: "Forbidden (company mismatch)",
+            });
         }
 
         const { isActive, personnelId } = req.body;
@@ -247,13 +281,13 @@ async function updateCard(req, res, next) {
             const belongs = await prisma.personnel.findFirst({
                 where: {
                     id: Number(personnelId),
-                    companyId: existing.companyId
-                }
+                    companyId: existing.companyId,
+                },
             });
 
             if (!belongs) {
                 return res.status(403).json({
-                    error: "Personnel does not belong to this company."
+                    error: "Personnel does not belong to this company.",
                 });
             }
         }
@@ -262,8 +296,8 @@ async function updateCard(req, res, next) {
             where: { id },
             data: {
                 isActive,
-                personnelId: personnelId ? Number(personnelId) : null
-            }
+                personnelId: personnelId ? Number(personnelId) : null,
+            },
         });
 
         res.json(updated);
@@ -273,7 +307,7 @@ async function updateCard(req, res, next) {
 }
 
 /* ---------------------------------------------------
-   7) Kart Silme
+   7) KART SİLME
 --------------------------------------------------- */
 async function deleteCard(req, res, next) {
     try {
@@ -281,7 +315,9 @@ async function deleteCard(req, res, next) {
         const requesterCompanyId = req.user.companyId;
         const superadmin = isSuperadmin(req);
 
-        const existing = await prisma.nFCCard.findUnique({ where: { id } });
+        const existing = await prisma.nFCCard.findUnique({
+            where: { id },
+        });
 
         if (!existing) {
             return res.status(404).json({ error: "Card not found" });
@@ -289,7 +325,7 @@ async function deleteCard(req, res, next) {
 
         if (!superadmin && existing.companyId !== requesterCompanyId) {
             return res.status(403).json({
-                error: "Forbidden (company mismatch)"
+                error: "Forbidden (company mismatch)",
             });
         }
 
@@ -308,5 +344,5 @@ module.exports = {
     listLogs,
     listAllCards,
     updateCard,
-    deleteCard
+    deleteCard,
 };
