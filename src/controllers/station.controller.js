@@ -7,6 +7,7 @@ const prisma = new PrismaClient();
 async function listStations(req, res, next) {
     try {
         const { active } = req.query;
+
         const where = {};
 
         if (req.user.role !== "SUPERADMIN") {
@@ -18,9 +19,16 @@ async function listStations(req, res, next) {
 
         const stations = await prisma.station.findMany({
             where,
-            orderBy: { code: "asc" },
+            orderBy: {
+                name: "asc", // ✅ NULL sorununu önlemek için code yerine name
+            },
             include: {
-                departmentRel: true, // 🔥 FK departman
+                departmentRel: {
+                    select: {
+                        id: true,
+                        name: true,
+                    },
+                },
             },
         });
 
@@ -54,14 +62,11 @@ async function createStation(req, res, next) {
 
         const station = await prisma.station.create({
             data: {
-                name,
+                name: name.trim(),
                 code: code?.trim() || null,
 
-                // 🔥 YENİ FK
+                // ✅ FK DEPARTMENT
                 departmentId: departmentId ? Number(departmentId) : null,
-
-                // 🔴 ESKİ STRING ALAN — DOKUNMUYORUZ (şimdilik)
-                department: null,
 
                 companyId: Number(companyId),
             },
@@ -99,11 +104,11 @@ async function updateStation(req, res, next) {
         const updated = await prisma.station.update({
             where: { id },
             data: {
-                name,
+                name: name?.trim(),
                 code: code?.trim() || null,
                 isActive,
 
-                // 🔥 FK UPDATE
+                // ✅ FK UPDATE
                 departmentId: departmentId ? Number(departmentId) : null,
             },
         });
